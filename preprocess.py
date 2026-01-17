@@ -113,14 +113,12 @@ def detect_keypoints(image_file: os.path):
 
     image_id = os.path.basename(image_file)[:-4]
     save_file = os.path.join(KEYPOINT_DIR, image_id + '.pkl')
-
-    keypoints, descriptors = [], []
-    """ YOUR CODE HERE:
-    Detect keypoints using cv2.SIFT_create() and sift.detectAndCompute
-    """
     
-
-
+    """ YOUR CODE HERE:"""
+    # Detect keypoints using SIFT
+    sift = cv2.SIFT_create()
+    image = cv2.imread(image_file, cv2.IMREAD_GRAYSCALE)
+    keypoints, descriptors = sift.detectAndCompute(image, None)
     """ END YOUR CODE HERE. """
 
     keypoints = [encode_keypoint(kp=kp) for kp in keypoints]
@@ -167,8 +165,16 @@ def create_feature_matches(image_file1: os.path, image_file2: os.path, lowe_rati
     1. Run cv.BFMatcher() and matcher.knnMatch(descriptors1, descriptors2, 2)
     2. Filter the feature matches using the Lowe ratio test.
     """
+    # Create BFMatcher
+    matcher = cv2.BFMatcher()
     
-
+    # Find k-nearest neighbors
+    matches = matcher.knnMatch(descriptors1, descriptors2, k=2)
+    
+    # Apply Lowe's ratio test
+    for m, n in matches:
+        if m.distance < lowe_ratio * n.distance:
+            good_matches.append([m])
 
     """ END YOUR CODE HERE. """
     if len(good_matches) < min_matches:
@@ -235,16 +241,13 @@ def create_ransac_matches(image_file1: os.path, image_file2: os.path,
     points2 = get_selected_points2d(image_id=image_id2, select_idxs=match_idxs[:, 1])
     camera_intrinsics = get_camera_intrinsics()
 
-    is_inlier = np.ones(shape=points1.shape[0], dtype=bool)  # dummy value
-    essential_mtx = np.zeros(shape=[3,3], dtype=float)
     """ 
     YOUR CODE HERE 
     Perform goemetric verification by finding the essential matrix between keypoints in the first image and keypoints in
     the second image using cv2.findEssentialMatrix(..., method=cv2.RANSAC, threshold=ransac_threshold, ...)
     """
-    
-
-
+    # Compute essential matrix using RANSAC
+    essential_mtx, is_inlier = cv2.findEssentialMat(points1, points2, camera_intrinsics, method=cv2.RANSAC, threshold=ransac_threshold)
     """ END YOUR CODE HERE """
 
     is_inlier = is_inlier.ravel().tolist()
@@ -273,16 +276,28 @@ def create_scene_graph(image_files: list, min_num_inliers: int = 40):
     graph = nx.Graph()
     graph.add_nodes_from(list(range(len(image_files))))
     image_ids = [os.path.basename(file)[:-4] for file in image_files]
+
     """ 
     YOUR CODE HERE:
     Add edges to <graph> if the minimum number of geometrically verified inliers between images is at least  
     <min_num_inliers> 
     """
-    
-
-    
+    # Add edges based on RANSAC inliers
+    for i in range(len(image_files)):
+        for j in range(i + 1, len(image_files)):
+            image_id1 = image_ids[i]
+            image_id2 = image_ids[j]
+            
+            # Check if RANSAC match file exists
+            sorted_ids = sorted([image_id1, image_id2])
+            match_file = os.path.join(RANSAC_MATCH_DIR, f"{sorted_ids[0]}_{sorted_ids[1]}.npy")
+            
+            if os.path.exists(match_file):
+                matches = np.load(match_file)
+                if matches.shape[0] >= min_num_inliers:
+                    graph.add_edge(i, j)
     """ END YOUR CODE HERE """
-
+    
     graph_dict = {node: [] for node in image_ids}
     for i1, i2 in graph.edges:
         node1 = image_ids[i1]
